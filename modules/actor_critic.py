@@ -2460,23 +2460,23 @@ class ActorCriticSF(nn.Module):
 
 class ActorCriticBarlowTwins(nn.Module):
     is_recurrent = False
-    def __init__(self,  num_prop,
-                        num_scan,
-                        num_critic_obs,
-                        num_priv_latent, 
-                        num_hist,
-                        num_actions,
-                        scan_encoder_dims=[256, 256, 256],
-                        actor_hidden_dims=[256, 256, 256],
-                        critic_hidden_dims=[256, 256, 256],
+    def __init__(self,  num_prop,  # 45+3
+                        num_scan,  # 187
+                        num_critic_obs,  # 45+3 + 187 + 10*(45+3) + 47
+                        num_priv_latent,  # 47
+                        num_hist,  # 10
+                        num_actions,  # 12
+                        scan_encoder_dims=[256, 256, 256],  # None
+                        actor_hidden_dims=[256, 256, 256],  # [512, 256, 128]
+                        critic_hidden_dims=[256, 256, 256],  # [512, 256, 128]
                         activation='elu',
                         init_noise_std=1.0,
                         **kwargs):
         super(ActorCriticBarlowTwins, self).__init__()
 
         self.kwargs = kwargs
-        priv_encoder_dims= kwargs['priv_encoder_dims']
-        cost_dims = kwargs['num_costs']
+        priv_encoder_dims= kwargs['priv_encoder_dims']  # []
+        cost_dims = kwargs['num_costs']  # 3
         activation = get_activation(activation)
         self.num_prop = num_prop
         self.num_scan = num_scan
@@ -2489,13 +2489,13 @@ class ActorCriticBarlowTwins(nn.Module):
         self.num_obs = num_prop + num_scan + num_hist * num_prop + num_priv_latent
         self.obs_normalize = EmpiricalNormalization(self.num_obs)
 
-        self.teacher_act = kwargs['teacher_act']
+        self.teacher_act = kwargs['teacher_act']  # True
         if self.teacher_act:
             print("ppo with teacher actor")
         else:
-            print("ppo with teacher actor")
+            print("ppo without teacher actor")
 
-        self.imi_flag = kwargs['imi_flag']
+        self.imi_flag = kwargs['imi_flag']  # True
         if self.imi_flag:
             print("run imitation")
         else:
@@ -2630,7 +2630,9 @@ class ActorCriticBarlowTwins(nn.Module):
     def act_teacher(self,obs, **kwargs):
         # obs_prop = obs[:, :self.num_prop]
         # obs_hist = obs[:, -self.num_hist*self.num_prop:].view(-1, self.num_hist, self.num_prop)
+        # (num_envs, 45)
         obs_prop = obs[:, 3:self.num_prop]
+        # (num_envs, 10, 45)
         obs_hist = obs[:, -self.num_hist*self.num_prop:].view(-1, self.num_hist, self.num_prop)[:,:,3:]
         mean = self.actor_teacher_backbone(obs_prop,obs_hist)
         return mean
@@ -2674,6 +2676,7 @@ class ActorCriticBarlowTwins(nn.Module):
         return self.history_encoder(hist.view(-1, self.num_hist, self.num_prop))
     
     def imitation_learning_loss(self, obs,imi_weight=1):
+        # obs: (num_envs, 48 + 187 + 47 + 10*48)
         # obs_prop = obs[:, :self.num_prop]
         # obs_hist = obs[:, -self.num_hist*self.num_prop:].view(-1, self.num_hist, self.num_prop)
         obs_prop = obs[:, 3:self.num_prop]

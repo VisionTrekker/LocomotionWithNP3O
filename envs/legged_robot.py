@@ -314,12 +314,14 @@ class LeggedRobot(BaseTask):
         if self.cfg.domain_rand.randomize_lag_timesteps:
             self.num_envs_indexes = list(range(0,self.num_envs))
             self.randomized_lag = [random.randint(0,self.cfg.domain_rand.lag_timesteps-1) for i in range(self.num_envs)]
+            # (num_envs, 1)，每个元素是 [0,5]的随机整数
             self.randomized_lag_tensor = torch.FloatTensor(self.randomized_lag).view(-1,1)/(self.cfg.domain_rand.lag_timesteps-1)
             self.randomized_lag_tensor = self.randomized_lag_tensor.to(self.device)
             self.randomized_lag_tensor.requires_grad_ = False
         else:
             self.num_envs_indexes = list(range(0,self.num_envs))
             self.randomized_lag = [self.cfg.domain_rand.lag_timesteps-1 for i in range(self.num_envs)]
+            # (num_envs, 1)， 全1
             self.randomized_lag_tensor = torch.FloatTensor(self.randomized_lag).view(-1,1)/(self.cfg.domain_rand.lag_timesteps-1)
             self.randomized_lag_tensor = self.randomized_lag_tensor.to(self.device)
             self.randomized_lag_tensor.requires_grad_ = False
@@ -353,6 +355,7 @@ class LeggedRobot(BaseTask):
 
         #self.action_history_buf = torch.cat([self.action_history_buf[:, 1:].clone(), actions[:, None, :].clone()], dim=1)
         #self.cfg.control.action_scale
+        # (num_envs, 10, 12) 最后一帧是最新的
         self.action_history_buf = torch.cat([self.action_history_buf[:, 1:].clone(), actions[:, None, :].clone()], dim=1)
 
         actions = self.reindex(actions)
@@ -387,7 +390,7 @@ class LeggedRobot(BaseTask):
         return self.obs_buf,self.privileged_obs_buf,self.rew_buf,self.cost_buf,self.reset_buf, self.extras
     
     def compute_observations(self):
-
+        # 3+3+3+3+12+12+12 = 48
         obs_buf =torch.cat((self.base_lin_vel * self.obs_scales.lin_vel,
                             self.base_ang_vel  * self.obs_scales.ang_vel,
                             self.projected_gravity,
@@ -420,16 +423,17 @@ class LeggedRobot(BaseTask):
         if self.cfg.noise.add_noise:
             obs_buf += (2 * torch.rand_like(obs_buf) - 1) * noise_vec.to(self.device)
 
+        # 4 + 1 + 4 + 1 + 1 + 12 + 12 + 12 = 47
         priv_latent = torch.cat((
             #self.base_lin_vel * self.obs_scales.lin_vel,
             self.reindex_feet(self.contact_filt.float()-0.5),
             self.randomized_lag_tensor,
             #self.base_ang_vel  * self.obs_scales.ang_vel,
             # self.base_lin_vel * self.obs_scales.lin_vel,
-            self.mass_params_tensor,
-            self.friction_coeffs_tensor,
-            self.restitution_coeffs_tensor,
-            self.motor_strength, 
+            self.mass_params_tensor,  # (num_envs, 4)
+            self.friction_coeffs_tensor,  # (num_envs, 1)
+            self.restitution_coeffs_tensor,  # (num_envs, 1)
+            self.motor_strength,
             self.kp_factor,
             self.kd_factor), dim=-1)
         
@@ -437,11 +441,13 @@ class LeggedRobot(BaseTask):
         if self.cfg.terrain.measure_heights:
             #priv_latent = torch.cat([priv_latent,self.feet_local_heights],dim=-1)
             heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.)*self.obs_scales.height_measurements
+            # 48 + 187 + 47 + 10*48 = 762
             self.obs_buf = torch.cat([obs_buf, heights, priv_latent, self.obs_history_buf.view(self.num_envs, -1)], dim=-1)
         else:
             self.obs_buf = torch.cat([obs_buf, priv_latent, self.obs_history_buf.view(self.num_envs, -1)], dim=-1)
 
         # update buffer
+        # (num_envs, 10, 48)，最后一帧是最新的
         self.obs_history_buf = torch.where(
             (self.episode_length_buf <= 1)[:, None, None], 
             torch.stack([obs_buf] * self.cfg.env.history_len, dim=1),
@@ -451,6 +457,7 @@ class LeggedRobot(BaseTask):
             ], dim=1)
         )
 
+        # (num_envs, 100, 4)
         self.contact_buf = torch.where(
             (self.episode_length_buf <= 1)[:, None, None], 
             torch.stack([self.contact_filt.float()] * self.cfg.env.contact_buf_len, dim=1),
@@ -460,7 +467,7 @@ class LeggedRobot(BaseTask):
             ], dim=1)
         )
 
-        if self.cfg.terrain.include_act_obs_pair_buf:
+        if self.cfg.terrain.include_act_obs_pair_buf:  # False
             # add to full observation history and action history to obs
             pure_obs_hist = self.obs_history_buf[:,:,:-self.num_actions].reshape(self.num_envs,-1)
             act_hist = self.action_history_buf.view(self.num_envs,-1)
@@ -733,6 +740,7 @@ class LeggedRobot(BaseTask):
         #     joint_pos_target = actions_scaled + self.default_dof_pos
 
         if self.cfg.domain_rand.randomize_lag_timesteps:
+            # (num_envs, 6, 12) 最后一帧是最新的
             self.lag_buffer = torch.cat([self.lag_buffer[:,1:,:].clone(),actions_scaled.unsqueeze(1).clone()],dim=1)
             joint_pos_target = self.lag_buffer[self.num_envs_indexes,self.randomized_lag,:] + self.default_dof_pos
         else:

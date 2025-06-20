@@ -32,13 +32,13 @@ class OnConstraintPolicyRunner:
 
         # self.phase1_end = self.cfg["phase1_end"] 
  
-        actor_critic_class = eval(self.cfg["policy_class_name"])  # ActorCritic
-        actor_critic: ActorCriticRMA = actor_critic_class(self.env.cfg.env.n_proprio,
-                                                      self.env.cfg.env.n_scan,
-                                                      self.env.num_obs,
-                                                      self.env.cfg.env.n_priv_latent,
-                                                      self.env.cfg.env.history_len,
-                                                      self.env.num_actions,
+        actor_critic_class = eval(self.cfg["policy_class_name"])  # ActorCriticBarlowTwins
+        actor_critic: ActorCriticRMA = actor_critic_class(self.env.cfg.env.n_proprio,  # 45+3
+                                                      self.env.cfg.env.n_scan,  # 187
+                                                      self.env.num_obs,  # 45+3 + 187 + 10*(45+3) + 47
+                                                      self.env.cfg.env.n_priv_latent,  # 47
+                                                      self.env.cfg.env.history_len,  # 10
+                                                      self.env.num_actions,  # 12
                                                       **self.policy_cfg)
         if self.cfg['resume']:
             model_dict = torch.load(os.path.join(ROOT_DIR, self.cfg['resume_path']))
@@ -62,7 +62,7 @@ class OnConstraintPolicyRunner:
 
         # Create algorithm
         self.alg_cfg['k_value'] = self.env.cost_k_values
-        alg_class = eval(self.cfg["algorithm_class_name"]) # PPO
+        alg_class = eval(self.cfg["algorithm_class_name"]) # NP3O
         self.alg = alg_class(actor_critic, 
                                   depth_encoder, self.depth_encoder_cfg, depth_actor,
                                   device=self.device,
@@ -97,9 +97,9 @@ class OnConstraintPolicyRunner:
             self.env.episode_length_buf = torch.randint_like(self.env.episode_length_buf,
                                                              high=int(self.env.max_episode_length))
 
-        obs = self.env.get_observations()
-        privileged_obs = self.env.get_privileged_observations()
-        critic_obs = privileged_obs if privileged_obs is not None else obs
+        obs = self.env.get_observations()  # (num_envs, 762)
+        privileged_obs = self.env.get_privileged_observations()  # None
+        critic_obs = privileged_obs if privileged_obs is not None else obs  # (num_envs, 762)
         obs, critic_obs = obs.to(self.device), critic_obs.to(self.device)
         infos = {}
         infos["depth"] = self.env.depth_buffer.clone().to(self.device) if self.if_depth else None

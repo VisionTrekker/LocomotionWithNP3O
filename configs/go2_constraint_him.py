@@ -35,10 +35,11 @@ class Go2ConstraintHimRoughCfg( LeggedRobotCfg ):
         num_envs = 4096
 
         n_scan = 187
-        n_priv_latent =  4 + 1 + 12 + 12 + 12 + 6 + 1 + 4 + 1 - 3 + 3 - 3 + 4 - 7
+        n_priv_latent =  4 + 1 + 12 + 12 + 12 + 6 + 1 + 4 + 1 - 3 + 3 - 3 + 4 - 7  # 47
         n_proprio = 45 + 3
         history_len = 10
         num_observations = n_proprio + n_scan + history_len*n_proprio + n_priv_latent
+        num_privileged_obs = None # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise
 
     class init_state( LeggedRobotCfg.init_state ):
         pos = [0.0, 0.0, 0.42] # x,y,z [m]
